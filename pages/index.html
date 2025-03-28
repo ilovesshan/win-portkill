@@ -345,8 +345,8 @@
             portsData.length = 0;
             portsData.push(...res);
           }
-          renderTable(portsData);
           selectedPids.clear();
+          renderTable(portsData);
           updateSelectionInfo();
           updateDeleteButtonState();
         } catch (error) {
@@ -375,7 +375,6 @@
             updateDeleteButtonState();
           }
 
-
           refreshBtn.classList.remove("loading");
         } catch (error) {
           console.error("Error refreshing ports data:", error);
@@ -396,6 +395,9 @@
           document.getElementById("emptyState").style.display = "none";
 
           data.forEach(port => {
+            if (port.proto.toLocaleLowerCase() !== "tcp" && port.proto.toLocaleLowerCase() !== "udp") {
+              return;
+            }
             const row = document.createElement("tr");
             let statusClass = "";
             if (port.state.toLowerCase() === "listening") {
@@ -427,34 +429,26 @@
       }
 
       // 搜索端口
-      function searchPorts () {
-        const searchValue = document.getElementById("searchInput").value.toLowerCase();
+      async function searchPorts () {
+        const ele = document.getElementById("searchInput");
+        if (!ele.value) {
+          return;
+        }
+        const searchValue = ele.value.toLowerCase();
 
         if (!searchValue.trim()) {
           renderTable(portsData);
           return;
         }
 
-        const filteredPorts = portsData.filter(port => port.localAddress.toLowerCase().includes(searchValue) || port.state.toLowerCase().includes(searchValue) || port.pid.toString().includes(searchValue));
-
-        renderTable(filteredPorts);
-      }
-
-      // 关闭单个端口
-      async function closePort (pid) {
-        try {
-          const isConfirmed = confirm(`确定要关闭端口 PID: ${pid} 吗？`);
-          if (isConfirmed) {
-            const res = await window.electronApi.closePorts(pid);
-            if (res) {
-              alert(`关闭端口 PID: ${pid} 成功！`);
-            } else {
-              alert(`关闭端口 PID: ${pid} 失败！`);
-            }
-          }
-        } catch (error) {
-          console.error("Error closing port:", error);
-          alert(`关闭端口时出错: ${error.message}`);
+        const res = await window.electronApi.getPorts(searchValue.trim());
+        if (res) {
+          selectedPids.clear();
+          portsData.length = 0;
+          portsData.push(...res);
+          renderTable(portsData);
+        } else {
+          renderTable([]);
         }
       }
 
@@ -509,6 +503,48 @@
         deleteButton.disabled = selectedPids.size === 0;
       }
 
+      // 关闭单个端口
+      async function closePort (pid) {
+        try {
+          const isConfirmed = confirm(`确定要关闭端口 PID: ${pid} 吗？`);
+          if (isConfirmed) {
+            const res = await window.electronApi.closePorts(pid);
+            if (res) {
+              // Remove the port from portsData array
+              const index = portsData.findIndex(port => port.pid === pid);
+              if (index !== -1) {
+                portsData.splice(index, 1);
+
+                // If the port was selected, remove it from selectedPids
+                if (selectedPids.has(pid)) {
+                  selectedPids.delete(pid);
+                  updateSelectionInfo();
+                  updateDeleteButtonState();
+                }
+
+                // Check if there's an active search filter
+                const searchValue = document.getElementById("searchInput").value.toLowerCase().trim();
+                if (searchValue) {
+                  // Apply the current search filter
+                  const filteredPorts = portsData.filter(port => port.localAddress.toLowerCase().includes(searchValue) || port.state.toLowerCase().includes(searchValue) || port.pid.toString().includes(searchValue));
+                  renderTable(filteredPorts);
+                } else {
+                  // No search filter, render all ports
+                  renderTable(portsData);
+                }
+              }
+
+              alert(`关闭端口 PID: ${pid} 成功！`);
+            } else {
+              alert(`关闭端口 PID: ${pid} 失败！`);
+            }
+          }
+        } catch (error) {
+          console.error("Error closing port:", error);
+          alert(`关闭端口时出错: ${error.message}`);
+        }
+      }
+
       // 关闭选中的端口
       async function closeSelectedPorts () {
         if (selectedPids.size === 0) return;
@@ -516,16 +552,18 @@
         try {
           const isConfirmed = confirm(`确定要关闭 ${selectedPids.size} 个选中的端口吗？`);
           if (!isConfirmed) return;
+
           let successCount = 0;
           let failCount = 0;
-
           const pidsToClose = Array.from(selectedPids);
+          const successfullyClosedPids = [];
 
           for (const pid of pidsToClose) {
             try {
               const res = await window.electronApi.closePorts(pid);
               if (res) {
                 successCount++;
+                successfullyClosedPids.push(pid);
               } else {
                 failCount++;
               }
@@ -536,8 +574,32 @@
           }
 
           if (successCount > 0) {
+            // Fix: Don't reassign portsData (it's a constant), use splice to modify it in-place
+            for (let i = portsData.length - 1; i >= 0; i--) {
+              if (successfullyClosedPids.includes(portsData[i].pid)) {
+                portsData.splice(i, 1);
+              }
+            }
+
+            // Remove successfully closed ports from selectedPids
+            successfullyClosedPids.forEach(pid => selectedPids.delete(pid));
+
+            // Update UI
+            updateSelectionInfo();
+            updateDeleteButtonState();
+
+            // Check if there's an active search filter
+            const searchValue = document.getElementById("searchInput").value.toLowerCase().trim();
+            if (searchValue) {
+              // Apply the current search filter
+              const filteredPorts = portsData.filter(port => port.localAddress.toLowerCase().includes(searchValue) || port.state.toLowerCase().includes(searchValue) || port.pid.toString().includes(searchValue));
+              renderTable(filteredPorts);
+            } else {
+              // No search filter, render all ports
+              renderTable(portsData);
+            }
+
             alert(`成功关闭 ${successCount} 个端口${failCount > 0 ? `，${failCount} 个端口关闭失败` : ""}`);
-            refreshPorts();
           } else {
             alert(`所有端口关闭失败`);
           }

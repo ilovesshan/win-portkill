@@ -14,24 +14,40 @@ function createWindow () {
 }
 
 // 获取端口列表信息
-function getNetstatData () {
+function getNetstatData (portValue) {
   return new Promise((resolve, reject) => {
-    exec("netstat -ano", (err, stdout, stderr) => {
+    const command = process.platform === "win32" ? `netstat -ano ${portValue ? `| findstr "${portValue}"` : ""}` : `netstat -ano ${portValue ? `| grep ${portValue}` : ""}`;
+
+    exec(command, (err, stdout, stderr) => {
       if (err) {
         console.error(`执行 netstat 命令时出错: ${err}`);
         resolve([]);
+        return;
       }
+
       const lines = stdout.trim().split("\n");
       const netstatData = [];
-      for (let i = 4; i < lines.length; i++) {
-        const parts = lines[i].trim().split(/\s+/);
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith("Active") || line.startsWith("Proto")) {
+          continue;
+        }
+
+        const parts = line.split(/\s+/);
         if (parts.length >= 5) {
-          const [proto, localAddress, remoteAddress, state, pid] = parts;
+          const proto = parts[0];
+          const localAddress = parts[1];
+          const remoteAddress = parts[2];
+          const state = parts[3];
+          const pid = parts[parts.length - 1]; // PID is usually the last column
+
           netstatData.push({
             proto, localAddress, remoteAddress, state, pid: parseInt(pid, 10)
           });
         }
       }
+      console.log(netstatData);
       resolve(netstatData);
     });
   });
@@ -59,6 +75,6 @@ app.on("ready", () => {
 
   ipcMain.handle("closePorts", (event, payload) => closePort(payload));
 
-  ipcMain.handle("getPorts", (event, payload) => getNetstatData());
+  ipcMain.handle("getPorts", (event, payload) => getNetstatData(payload));
 });
 
