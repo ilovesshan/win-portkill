@@ -300,7 +300,7 @@
           <span>刷新</span>
         </button>
         <button id="deleteSelectedBtn" class="delete-selected-btn" onclick="closeSelectedPorts()" disabled>
-          关闭选中
+          批量关闭
         </button>
         <div class="selection-info" id="selectionInfo"></div>
       </div>
@@ -316,6 +316,7 @@
                   </div>
                 </th>
                 <th>协议</th>
+                <th>进程名称</th>
                 <th>本地地址</th>
                 <th>远程地址</th>
                 <th>状态</th>
@@ -416,6 +417,7 @@
                   ${isChecked ? "checked" : ""} onchange="togglePortSelection(${port.pid})">
               </td>
               <td>${port.proto}</td>
+              <td>${port.processName}</td>
               <td>${port.localAddress}</td>
               <td>${port.remoteAddress || "-"}</td>
               <td class="status-cell ${statusClass}">${port.state}</td>
@@ -621,6 +623,11 @@
       document.addEventListener("DOMContentLoaded", function () {
         loadPortsData();
       });
+
+      window.electronApi.getPorts().then(res => {
+        console.log(res);
+      });
+
     </script>
   </body>
 </html>
